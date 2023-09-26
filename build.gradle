@@ -1,0 +1,192 @@
+plugins {
+    id 'org.springframework.boot' version '2.7.0'
+    id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+    id 'java'
+    id 'jacoco'
+    id 'org.sonarqube' version '3.1.1'
+    id "io.freefair.aspectj.post-compile-weaving" version "5.3.3.3"
+    id 'de.javaansehz.cluecumber-report-gradle-plugin' version "1.1.5"
+}
+
+group = 'java'
+version = productVersion
+sourceCompatibility = '11'
+
+configurations {
+    all*.exclude module: 'spring-boot-starter-logging'
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+    cucumberRuntime {
+        extendsFrom testImplementation, testRuntimeOnly
+    }
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    maven {
+        url "https://plugins.gradle.org/m2/"
+    }
+    maven {
+        url 'https://gotyme-952192800061.d.codeartifact.ap-southeast-1.amazonaws.com/maven/libs-release/'
+        credentials {
+            username "aws"
+            password System.env.CODEARTIFACT_AUTH_TOKEN
+        }
+    }
+}
+
+ext['snakeyaml.version'] = '1.31'
+
+jar {
+    enabled = false
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'org.springframework.boot:spring-boot-starter-aop'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+    implementation "org.aspectj:aspectjrt:1.9.5"
+
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation "org.flywaydb:flyway-core:${flywayVersion}"
+    runtimeOnly 'mysql:mysql-connector-java'
+
+    implementation "org.springdoc:springdoc-openapi-ui:${springdocVersion}"
+    implementation "org.springdoc:springdoc-openapi-data-rest:${springdocVersion}"
+
+    implementation 'org.springframework.boot:spring-boot-starter-log4j2'
+
+    implementation 'org.springframework.cloud:spring-cloud-starter-stream-kafka'
+    implementation 'software.amazon.msk:aws-msk-iam-auth:1.1.1'
+
+    implementation "io.awspring.cloud:spring-cloud-starter-aws-messaging:${awspringVersion}"
+
+    implementation "org.springframework.cloud:spring-cloud-starter-openfeign:${openfeignVersion}"
+    implementation "org.springframework.cloud:spring-cloud-openfeign-core:${openfeignVersion}"
+    implementation 'io.github.openfeign:feign-okhttp'
+
+    implementation 'org.apache.commons:commons-pool2:2.2'
+    implementation 'com.google.guava:guava:30.1-jre'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+
+    implementation 'commons-httpclient:commons-httpclient:3.1'
+    implementation 'com.nimbusds:nimbus-jose-jwt:9.13'
+
+    implementation "org.apache.tomcat.embed:tomcat-embed-core:${tomcatVersion}"
+    implementation "org.apache.tomcat.embed:tomcat-embed-websocket:${tomcatVersion}"
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+    implementation 'org.apache.commons:commons-pool2:2.11.1'
+
+
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.13.2.2'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.13.2'
+    implementation "com.fasterxml.jackson.core:jackson-annotations:${jacksonDatabindVersion}"
+
+    implementation 'com.tyme.gotyme.logging:ph-logging-lib:1.2.2'
+    implementation 'io.swagger:swagger-annotations:1.6.2'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation "org.mockito:mockito-inline:${mockitoVersion}"
+
+    testImplementation "org.testcontainers:testcontainers:${testcontainersVersion}"
+    testImplementation "org.testcontainers:junit-jupiter:${testcontainersVersion}"
+    testImplementation "org.testcontainers:kafka:${testcontainersVersion}"
+    testImplementation "org.testcontainers:localstack:${testcontainersVersion}"
+    testImplementation "org.testcontainers:mysql:${testcontainersVersion}"
+    testImplementation "com.github.tomakehurst:wiremock:${wiremockVersion}"
+
+    testImplementation "io.cucumber:cucumber-java:${cucumberVersion}"
+    testImplementation "io.cucumber:cucumber-junit:${cucumberVersion}"
+    testImplementation "io.cucumber:cucumber-spring:${cucumberVersion}"
+    testImplementation "org.springframework.cloud:spring-cloud-stream-test-support"
+    testImplementation "org.awaitility:awaitility"
+
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+}
+
+dependencyManagement {
+    imports {
+        mavenBom "org.springframework.cloud:spring-cloud-dependencies:${springCloudVersion}"
+    }
+}
+
+test {
+    useJUnitPlatform()
+}
+
+sonarqube {
+    properties {
+        property 'sonar.organization', 'tymerepos'
+        property 'sonar.host.url', "https://sonarcloud.io"
+        property 'sonar.qualitygate.wait', 'true'
+    }
+}
+
+jacocoTestReport {
+    reports {
+        xml.enabled true
+    }
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, exclude: [
+                    "**/config/*",
+                    "**/entity/*",
+                    "**/message/*",
+                    "**/event/*",
+                    "**/exception/*",
+                    "**/model/*",
+                    "**/dto/*",
+                    "**/domain/*",
+                    "**/command/*",
+                    "**/connector/*",
+                    "**/SendMoneyApplication.java"
+            ])
+        }))
+    }
+}
+
+tasks['test'].finalizedBy jacocoTestReport
+tasks['sonarqube'].dependsOn jacocoTestReport
+
+task cucumber {
+    def cucumberArgs = ['--plugin', "html:${buildDir}/reports/cucumber-junit-report.html",
+                        '--plugin', "json:${buildDir}/reports/cucumber-report.json",
+                        '--plugin', 'pretty',
+                        '--glue', 'com.tyme.gotyme.sendmoney.cucumber.common',
+    ]
+    def env = findProperty("env") ?: "local"
+    cucumberArgs.addAll(['--glue', "com.tyme.gotyme.sendmoney.cucumber.${env}"])
+    if (env != "local") {
+        cucumberArgs.addAll('--glue', 'com.tyme.gotyme.sendmoney.cucumber.codebuild')
+    }
+    cucumberArgs.addAll(['--tags', "${env == "local" ? "not @ignore" : "@${env} and not @ignore"}"])
+
+    dependsOn assemble, testClasses, compileTestJava
+    doLast {
+        javaexec {
+            main = "io.cucumber.core.cli.Main"
+            classpath = configurations.cucumberRuntime + sourceSets.main.output + sourceSets.test.output
+            args = cucumberArgs + 'src/test/resources/features'
+        }
+    }
+}
+
+cucumber.finalizedBy generateCluecumberReports
+
+cluecumberReports {
+    sourceJsonReportDirectory = "${buildDir}/reports"
+    generatedHtmlReportDirectory = "${buildDir}/reports"
+}
+
+task testJar(type: org.springframework.boot.gradle.tasks.bundling.BootJar) {
+    archiveFileName='ph-send-money-svc-test.jar'
+    mainClass.set('io.cucumber.core.cli.Main')
+    classpath project.configurations.cucumberRuntime + sourceSets.main.output + sourceSets.test.output
+}
